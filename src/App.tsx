@@ -1,244 +1,57 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type Role = "user" | "admin";
-type User = {
-  id: string;
-  name: string;
-  username: string;
-  email: string;
-  birthDate: string;
-  passwordHash: string;
-  createdAt: string;
-  role: Role;
-  active: boolean;
-};
+type Role = "director" | "teacher" | "student";
+type User = { id:string; name:string; username:string; email:string; passwordHash:string; role:Role; className:string; active:boolean; createdAt:string };
+type School = { name:string; city:string; director:string };
+type Assignment = { id:string; title:string; subject:string; description:string; dueDate:string; teacherId:string; className:string; };
+type Exam = { id:string; title:string; subject:string; date:string; teacherId:string; className:string; maxScore:number };
+type Grade = { id:string; examId:string; studentId:string; score:number; teacherId:string };
 
-const KEY = "hello-world-project.users.v3";
-const SESSION_KEY = "hello-world-project.session";
+const USERS="school.users.v1", SCHOOL="school.data.v1", ASSIGNMENTS="school.assignments.v1", EXAMS="school.exams.v1", GRADES="school.grades.v1", SESSION="school.session.v1";
+const normalize=(v:string)=>v.trim().toLowerCase();
+const read=<T,>(key:string,fallback:T):T=>{try{return JSON.parse(localStorage.getItem(key)||"null") ?? fallback}catch{return fallback}};
+const write=(key:string,value:unknown)=>localStorage.setItem(key,JSON.stringify(value));
+async function hash(value:string){const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,"0")).join("")}
 
-const normalize = (value: string) => value.trim().toLowerCase();
+export default function App(){
+ const [users,setUsers]=useState<User[]>(()=>read(USERS,[])),[school,setSchool]=useState<School>(()=>read(SCHOOL,{name:"Minha Escola",city:"",director:""})),[assignments,setAssignments]=useState<Assignment[]>(()=>read(ASSIGNMENTS,[])),[exams,setExams]=useState<Exam[]>(()=>read(EXAMS,[])),[grades,setGrades]=useState<Grade[]>(()=>read(GRADES,[]));
+ const [session,setSession]=useState<string|null>(()=>localStorage.getItem(SESSION)),[login,setLogin]=useState({username:"",password:""}),[loginMsg,setLoginMsg]=useState("");
+ const [view,setView]=useState("dashboard"),[msg,setMsg]=useState("");
+ const [schoolForm,setSchoolForm]=useState(school);
+ const [userForm,setUserForm]=useState({name:"",username:"",email:"",password:"",role:"student" as Role,className:""});
+ const [taskForm,setTaskForm]=useState({title:"",subject:"",description:"",dueDate:"",className:""});
+ const [examForm,setExamForm]=useState({title:"",subject:"",date:"",className:"",maxScore:"10"});
+ const [gradeForm,setGradeForm]=useState({examId:"",studentId:"",score:""});
+ const current=users.find(u=>u.id===session);
+ const isDirector=current?.role==="director",isTeacher=current?.role==="teacher",isStudent=current?.role==="student";
 
-function loadUsers(): User[] {
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || "[]");
-    return Array.isArray(saved)
-      ? saved.map((u: Partial<User>) => ({ ...u, role: u.role || "user", active: u.active !== false })) as User[]
-      : [];
-  } catch {
-    return [];
-  }
-}
+ useEffect(()=>{if(!users.some(u=>u.role==="director")) void (async()=>{const u:User={id:crypto.randomUUID(),name:"Diretor da Escola",username:"diretor",email:"diretor@escola.local",passwordHash:await hash("diretor123"),role:"director",className:"",active:true,createdAt:new Date().toISOString()};const next=[...users,u];setUsers(next);write(USERS,next);})();},[]);
+ useEffect(()=>{if(school.director!==current?.name&&isDirector){const s={...school,director:current.name};setSchool(s);setSchoolForm(s);write(SCHOOL,s)}},[current?.name,isDirector]);
 
-async function hash(value: string) {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, "0")).join("");
-}
+ async function doLogin(e:FormEvent){e.preventDefault();setLoginMsg("");const p=await hash(login.password),u=users.find(x=>normalize(x.username)===normalize(login.username)&&x.passwordHash===p);if(!u)return setLoginMsg("Usuário ou senha incorretos.");if(!u.active)return setLoginMsg("Esta conta está bloqueada.");localStorage.setItem(SESSION,u.id);setSession(u.id);setView("dashboard");setLogin({username:"",password:""})}
+ function logout(){localStorage.removeItem(SESSION);setSession(null)}
+ function saveSchool(e:FormEvent){e.preventDefault();const s={...schoolForm,director:current?.name||schoolForm.director};setSchool(s);write(SCHOOL,s);setMsg("Dados da escola salvos.");}
+ async function createUser(e:FormEvent){e.preventDefault();setMsg("");if(!userForm.name||!userForm.username||!userForm.password)return setMsg("Preencha os campos obrigatórios.");if(userForm.password.length<6)return setMsg("A senha precisa ter pelo menos 6 caracteres.");if(users.some(u=>normalize(u.username)===normalize(userForm.username)))return setMsg("Usuário já existe.");const u:User={id:crypto.randomUUID(),name:userForm.name.trim(),username:userForm.username.trim(),email:normalize(userForm.email),passwordHash:await hash(userForm.password),role:userForm.role,className:userForm.className.trim(),active:true,createdAt:new Date().toISOString()};const next=[...users,u];setUsers(next);write(USERS,next);setUserForm({name:"",username:"",email:"",password:"",role:"student",className:""});setMsg("Conta criada com sucesso.")}
+ function toggleUser(id:string){if(!isDirector)return;const next=users.map(u=>u.id===id?{...u,active:!u.active}:u);setUsers(next);write(USERS,next)}
+ function removeUser(id:string){if(!isDirector||id===current?.id)return;const next=users.filter(u=>u.id!==id);setUsers(next);write(USERS,next)}
+ function addTask(e:FormEvent){e.preventDefault();const a:Assignment={id:crypto.randomUUID(),...taskForm,teacherId:current!.id};const next=[...assignments,a];setAssignments(next);write(ASSIGNMENTS,next);setTaskForm({title:"",subject:"",description:"",dueDate:"",className:""});setMsg("Tarefa publicada.")}
+ function addExam(e:FormEvent){e.preventDefault();const x:Exam={id:crypto.randomUUID(),...examForm,maxScore:Number(examForm.maxScore)||10,teacherId:current!.id};const next=[...exams,x];setExams(next);write(EXAMS,next);setExamForm({title:"",subject:"",date:"",className:"",maxScore:"10"});setMsg("Prova cadastrada.")}
+ function addGrade(e:FormEvent){e.preventDefault();const x:Grade={id:crypto.randomUUID(),examId:gradeForm.examId,studentId:gradeForm.studentId,score:Number(gradeForm.score),teacherId:current!.id};const next=[...grades.filter(g=>!(g.examId===x.examId&&g.studentId===x.studentId)),x];setGrades(next);write(GRADES,next);setMsg("Nota lançada com sucesso.")}
+ const students=users.filter(u=>u.role==="student"),teacherExams=exams.filter(x=>x.teacherId===current?.id),teacherTasks=assignments.filter(x=>x.teacherId===current?.id);
+ if(!current)return <main className="authPage"><section className="authCard"><span className="badge">PLATAFORMA ESCOLAR</span><h1>Entrar</h1><p className="muted">Acesse sua conta de diretor, professor ou aluno.</p><form onSubmit={doLogin}><label>Usuário<input value={login.username} onChange={e=>setLogin({...login,username:e.target.value})} required/></label><label>Senha<input type="password" value={login.password} onChange={e=>setLogin({...login,password:e.target.value})} required/></label>{loginMsg&&<p className="message">{loginMsg}</p>}<button>Entrar</button></form><div className="demoBox"><b>Conta do diretor (demonstração)</b><span>Usuário: <strong>diretor</strong> · Senha: <strong>diretor123</strong></span></div></section></main>;
 
-function saveUsers(users: User[]) {
-  localStorage.setItem(KEY, JSON.stringify(users));
-}
-
-function getSession() {
-  return localStorage.getItem(SESSION_KEY);
-}
-
-export default function App() {
-  const [users, setUsers] = useState<User[]>(loadUsers);
-  const [session, setSession] = useState<string | null>(getSession);
-  const [login, setLogin] = useState({ username: "", password: "" });
-  const [loginMessage, setLoginMessage] = useState("");
-  const [search, setSearch] = useState("");
-  const [view, setView] = useState<"dashboard" | "users" | "profile">("dashboard");
-  const [form, setForm] = useState({
-    name: "", username: "", email: "", birthDate: "", password: "", confirm: "", role: "user" as Role,
-  });
-  const [message, setMessage] = useState("");
-
-  const currentUser = users.find((u) => u.id === session);
-  const isAdmin = currentUser?.role === "admin";
-
-  async function ensureAdmin() {
-    if (users.some((u) => u.role === "admin")) return;
-    // Conta administrativa apenas para demonstração local.
-    const passwordHash = await hash("admin123");
-      const admin: User = {
-        id: crypto.randomUUID(), name: "Administrador", username: "admin",
-        email: "admin@local.test", birthDate: "", passwordHash,
-        createdAt: new Date().toISOString(), role: "admin", active: true,
-      };
-      const next = [...users, admin];
-      saveUsers(next);
-      setUsers(next);
-    });
-  }
-
-  if (users.length === 0) ensureAdmin();
-
-  async function handleLogin(e: FormEvent) {
-    e.preventDefault();
-    setLoginMessage("");
-    const passwordHash = await hash(login.password);
-    const found = users.find(
-      (u) => normalize(u.username) === normalize(login.username) && u.passwordHash === passwordHash
-    );
-    if (!found) return setLoginMessage("Usuário ou senha incorretos.");
-    if (!found.active) return setLoginMessage("Esta conta está bloqueada.");
-    localStorage.setItem(SESSION_KEY, found.id);
-    setSession(found.id);
-    setLogin({ username: "", password: "" });
-    setView("dashboard");
-  }
-
-  function logout() {
-    localStorage.removeItem(SESSION_KEY);
-    setSession(null);
-  }
-
-  async function createUser(e: FormEvent) {
-    e.preventDefault();
-    setMessage("");
-    if (form.name.trim().length < 2) return setMessage("Informe um nome válido.");
-    if (!/^[A-Za-z0-9_.-]{3,30}$/.test(form.username)) return setMessage("Nome de usuário inválido.");
-    if (!/^\S+@\S+\.\S+$/.test(form.email)) return setMessage("Informe um e-mail válido.");
-    if (form.password.length < 6) return setMessage("A senha precisa ter pelo menos 6 caracteres.");
-    if (form.password !== form.confirm) return setMessage("As senhas não conferem.");
-    if (users.some((u) => normalize(u.username) === normalize(form.username)))
-      return setMessage("Nome de usuário já cadastrado.");
-    if (users.some((u) => normalize(u.email) === normalize(form.email)))
-      return setMessage("E-mail já cadastrado.");
-
-    const newUser: User = {
-      id: crypto.randomUUID(), name: form.name.trim(), username: form.username.trim(),
-      email: normalize(form.email), birthDate: form.birthDate,
-      passwordHash: await hash(form.password), createdAt: new Date().toISOString(),
-      role: isAdmin ? form.role : "user", active: true,
-    };
-    const next = [...users, newUser];
-    saveUsers(next);
-    setUsers(next);
-    setForm({ name: "", username: "", email: "", birthDate: "", password: "", confirm: "", role: "user" });
-    setMessage("Usuário cadastrado com sucesso.");
-  }
-
-  function toggleUser(id: string) {
-    if (!isAdmin || id === currentUser?.id) return;
-    const next = users.map((u) => u.id === id ? { ...u, active: !u.active } : u);
-    saveUsers(next);
-    setUsers(next);
-  }
-
-  function changeRole(id: string, role: Role) {
-    if (!isAdmin || id === currentUser?.id) return;
-    const next = users.map((u) => u.id === id ? { ...u, role } : u);
-    saveUsers(next);
-    setUsers(next);
-  }
-
-  function removeUser(id: string) {
-    if (!isAdmin || id === currentUser?.id) return;
-    const next = users.filter((u) => u.id !== id);
-    saveUsers(next);
-    setUsers(next);
-  }
-
-  const filtered = useMemo(() => users.filter((u) =>
-    [u.name, u.username, u.email, u.role].some((v) => normalize(v).includes(normalize(search)))
-  ), [users, search]);
-
-  if (!currentUser) {
-    return (
-      <main className="authPage">
-        <section className="authCard">
-          <span className="badge">SISTEMA DE USUÁRIOS</span>
-          <h1>Entrar</h1>
-          <p className="muted">Acesse seu painel de usuário ou administrador.</p>
-          <form onSubmit={handleLogin}>
-            <label>Usuário<input value={login.username} onChange={(e) => setLogin({ ...login, username: e.target.value })} required /></label>
-            <label>Senha<input type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} required /></label>
-            {loginMessage && <p className="message">{loginMessage}</p>}
-            <button type="submit">Entrar</button>
-          </form>
-          <div className="demoBox">
-            <strong>Acesso administrativo de demonstração</strong>
-            <span>Usuário: <b>admin</b> · Senha: <b>admin123</b></span>
-          </div>
-        </section>
-      </main>
-    );
-  }
-
-  return (
-    <div className="appShell">
-      <aside className="sidebar">
-        <div>
-          <span className="badge">GRB SYSTEM</span>
-          <h2>Painel</h2>
-          <nav>
-            <button className={view === "dashboard" ? "navActive" : ""} onClick={() => setView("dashboard")}>📊 Dashboard</button>
-            {isAdmin && <button className={view === "users" ? "navActive" : ""} onClick={() => setView("users")}>👥 Usuários</button>}
-            <button className={view === "profile" ? "navActive" : ""} onClick={() => setView("profile")}>👤 Meu perfil</button>
-          </nav>
-        </div>
-        <div className="accountBox">
-          <strong>{currentUser.name}</strong>
-          <span>@{currentUser.username}</span>
-          <span className="role">{isAdmin ? "Administrador" : "Usuário"}</span>
-          <button className="logout" onClick={logout}>Sair</button>
-        </div>
-      </aside>
-
-      <main className="content">
-        {view === "dashboard" && (
-          <>
-            <div className="pageTitle"><div><span className="badge">{isAdmin ? "PAINEL ADMINISTRATIVO" : "ÁREA DO USUÁRIO"}</span><h1>Olá, {currentUser.name}!</h1><p className="muted">{isAdmin ? "Gerencie as contas e o acesso ao sistema." : "Bem-vindo ao seu painel pessoal."}</p></div></div>
-            <div className="stats">
-              <div className="statCard"><span>Seu perfil</span><b>{isAdmin ? "Administrador" : "Usuário"}</b></div>
-              <div className="statCard"><span>Conta</span><b>{currentUser.active ? "Ativa" : "Bloqueada"}</b></div>
-              {isAdmin && <div className="statCard"><span>Total de contas</span><b>{users.length}</b></div>}
-            </div>
-            {isAdmin ? (
-              <section className="card">
-                <h2>Resumo administrativo</h2>
-                <p className="muted">Você pode cadastrar contas, alterar o nível de acesso, bloquear/desbloquear e excluir usuários.</p>
-                <button onClick={() => setView("users")}>Gerenciar usuários</button>
-              </section>
-            ) : (
-              <section className="card">
-                <h2>Minha conta</h2>
-                <div className="profileGrid"><div><span>Nome</span><strong>{currentUser.name}</strong></div><div><span>Usuário</span><strong>@{currentUser.username}</strong></div><div><span>E-mail</span><strong>{currentUser.email}</strong></div></div>
-              </section>
-            )}
-          </>
-        )}
-
-        {view === "profile" && (
-          <section className="card">
-            <span className="badge">MEU PERFIL</span><h1>Dados da conta</h1>
-            <div className="profileGrid"><div><span>Nome completo</span><strong>{currentUser.name}</strong></div><div><span>Nome de usuário</span><strong>@{currentUser.username}</strong></div><div><span>E-mail</span><strong>{currentUser.email}</strong></div><div><span>Tipo de conta</span><strong>{isAdmin ? "Administrador" : "Usuário normal"}</strong></div><div><span>Cadastro</span><strong>{new Date(currentUser.createdAt).toLocaleDateString("pt-BR")}</strong></div></div>
-          </section>
-        )}
-
-        {view === "users" && isAdmin && (
-          <>
-            <section className="card">
-              <div className="listHead"><div><span className="badge">ADMINISTRAÇÃO</span><h1>Usuários</h1><p className="muted">Crie e gerencie as contas do sistema.</p></div><input className="search" placeholder="Pesquisar..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-              <h2>Novo usuário</h2>
-              <form onSubmit={createUser}>
-                <div className="grid">{[["name","Nome completo","text"],["username","Nome de usuário","text"],["email","E-mail","email"],["birthDate","Data de nascimento","date"],["password","Senha","password"],["confirm","Confirmar senha","password"]].map(([key,label,type]) => <label key={key}>{label}<input type={type} value={(form as Record<string,string>)[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} required={key !== "birthDate"} /></label>)}
-                  <label>Tipo de conta<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}><option value="user">Usuário normal</option><option value="admin">Administrador</option></select></label>
-                </div>
-                {message && <p className={message.includes("sucesso") ? "success" : "message"}>{message}</p>}
-                <button type="submit">Cadastrar conta</button>
-              </form>
-            </section>
-            <section className="card">
-              <h2>Contas cadastradas ({filtered.length})</h2>
-              <div className="users">{filtered.map((u) => <div className="user" key={u.id}><div><strong>{u.name}</strong><span>@{u.username} · {u.email}</span><small className={u.active ? "active" : "blocked"}>{u.active ? "● Ativa" : "● Bloqueada"} · {u.role === "admin" ? "Administrador" : "Usuário"}</small></div><div className="actions">{u.id !== currentUser.id && <><select value={u.role} onChange={(e) => changeRole(u.id, e.target.value as Role)}><option value="user">Usuário</option><option value="admin">Admin</option></select><button className="secondary" onClick={() => toggleUser(u.id)}>{u.active ? "Bloquear" : "Desbloquear"}</button><button className="remove" onClick={() => removeUser(u.id)}>Excluir</button></>}</div></div>)}</div>
-            </section>
-          </>
-        )}
-      </main>
-    </div>
-  );
+ const roleLabel=isDirector?"Diretor":isTeacher?"Professor":"Aluno";
+ return <div className="appShell"><aside className="sidebar"><div><span className="badge">PLATAFORMA ESCOLAR</span><h2>{school.name}</h2><nav><button className={view==="dashboard"?"navActive":""} onClick={()=>setView("dashboard")}>📊 Dashboard</button>{isDirector&&<><button className={view==="school"?"navActive":""} onClick={()=>setView("school")}>🏫 Escola</button><button className={view==="people"?"navActive":""} onClick={()=>setView("people")}>👥 Usuários</button></>}{isTeacher&&<><button className={view==="tasks"?"navActive":""} onClick={()=>setView("tasks")}>📝 Tarefas</button><button className={view==="exams"?"navActive":""} onClick={()=>setView("exams")}>📋 Provas</button><button className={view==="grades"?"navActive":""} onClick={()=>setView("grades")}>🎓 Notas</button></>}{isStudent&&<><button className={view==="tasks"?"navActive":""} onClick={()=>setView("tasks")}>📝 Minhas tarefas</button><button className={view==="exams"?"navActive":""} onClick={()=>setView("exams")}>📋 Minhas provas</button><button className={view==="grades"?"navActive":""} onClick={()=>setView("grades")}>🎓 Minhas notas</button></>}<button className={view==="profile"?"navActive":""} onClick={()=>setView("profile")}>👤 Meu perfil</button></nav></div><div className="accountBox"><strong>{current.name}</strong><span>@{current.username}</span><span className="role">{roleLabel}</span><button className="logout" onClick={logout}>Sair</button></div></aside>
+ <main className="content">
+ {view==="dashboard"&&<><div className="pageTitle"><span className="badge">{roleLabel.toUpperCase()}</span><h1>Olá, {current.name}!</h1><p className="muted">Bem-vindo à plataforma escolar.</p></div><div className="stats"><div className="statCard"><span>Escola</span><b>{school.name}</b></div><div className="statCard"><span>Seu acesso</span><b>{roleLabel}</b></div><div className="statCard"><span>{isStudent?"Notas lançadas":isTeacher?"Minhas provas":"Usuários"}</span><b>{isStudent?grades.filter(g=>g.studentId===current.id).length:isTeacher?teacherExams.length:users.length}</b></div></div>{isDirector&&<section className="card"><h2>Administração escolar</h2><p className="muted">Cadastre a escola, professores e alunos e controle as contas.</p><button onClick={()=>setView("school")}>Configurar escola</button></section>}{isTeacher&&<section className="card"><h2>Área do professor</h2><p className="muted">Crie tarefas, cadastre provas e lance notas para seus alunos.</p><button onClick={()=>setView("tasks")}>Criar tarefa</button></section>}{isStudent&&<section className="card"><h2>Área do aluno</h2><p className="muted">Consulte suas tarefas, provas e notas.</p><div className="stats mini"><div className="statCard"><span>Tarefas</span><b>{assignments.filter(a=>a.className===current.className).length}</b></div><div className="statCard"><span>Provas</span><b>{exams.filter(x=>x.className===current.className).length}</b></div></div></section>}</>}
+ {view==="school"&&isDirector&&<section className="card"><span className="badge">CADASTRO DA ESCOLA</span><h1>Dados da escola</h1><form onSubmit={saveSchool} className="grid"><label>Nome da escola<input value={schoolForm.name} onChange={e=>setSchoolForm({...schoolForm,name:e.target.value})} required/></label><label>Cidade<input value={schoolForm.city} onChange={e=>setSchoolForm({...schoolForm,city:e.target.value})}/></label><div><button>Salvar escola</button></div></form>{msg&&<p className="success">{msg}</p>}</section>}
+ {view==="people"&&isDirector&&<><section className="card"><span className="badge">GESTÃO DE CONTAS</span><h1>Cadastrar usuário</h1><form onSubmit={createUser}><div className="grid"><label>Nome completo<input value={userForm.name} onChange={e=>setUserForm({...userForm,name:e.target.value})} required/></label><label>Usuário<input value={userForm.username} onChange={e=>setUserForm({...userForm,username:e.target.value})} required/></label><label>E-mail<input type="email" value={userForm.email} onChange={e=>setUserForm({...userForm,email:e.target.value})}/></label><label>Senha<input type="password" value={userForm.password} onChange={e=>setUserForm({...userForm,password:e.target.value})} required/></label><label>Tipo de conta<select value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value as Role})}><option value="student">Aluno</option><option value="teacher">Professor</option><option value="director">Diretor</option></select></label><label>Turma<input placeholder="Ex.: 8º A" value={userForm.className} onChange={e=>setUserForm({...userForm,className:e.target.value})}/></label></div>{msg&&<p className="message">{msg}</p>}<button>Criar conta</button></form></section><section className="card"><h2>Usuários da escola ({users.length})</h2><div className="users">{users.map(u=><div className="user" key={u.id}><div><strong>{u.name}</strong><span>@{u.username} · {u.role==="director"?"Diretor":u.role==="teacher"?"Professor":"Aluno"} {u.className&&"· "+u.className}</span></div>{u.id!==current.id&&<div className="actions"><button className="secondary" onClick={()=>toggleUser(u.id)}>{u.active?"Bloquear":"Desbloquear"}</button><button className="remove" onClick={()=>removeUser(u.id)}>Excluir</button></div>}</div>)}</div></section></>}
+ {view==="tasks"&&isTeacher&&<><section className="card"><span className="badge">PROFESSOR</span><h1>Nova tarefa</h1><form onSubmit={addTask}><div className="grid"><label>Título<input value={taskForm.title} onChange={e=>setTaskForm({...taskForm,title:e.target.value})} required/></label><label>Disciplina<input value={taskForm.subject} onChange={e=>setTaskForm({...taskForm,subject:e.target.value})} required/></label><label>Prazo<input type="date" value={taskForm.dueDate} onChange={e=>setTaskForm({...taskForm,dueDate:e.target.value})}/></label><label>Turma<input value={taskForm.className} onChange={e=>setTaskForm({...taskForm,className:e.target.value})} placeholder="Ex.: 8º A" required/></label><label className="full">Descrição<textarea value={taskForm.description} onChange={e=>setTaskForm({...taskForm,description:e.target.value})}/></label></div><button>Publicar tarefa</button></form>{msg&&<p className="success">{msg}</p>}</section><section className="card"><h2>Minhas tarefas</h2>{teacherTasks.map(a=><div className="item" key={a.id}><b>{a.title}</b><span>{a.subject} · {a.className} · prazo {a.dueDate||"não definido"}</span><p>{a.description}</p></div>)}</section></>}
+ {view==="tasks"&&isStudent&&<section className="card"><span className="badge">ALUNO</span><h1>Minhas tarefas</h1>{assignments.filter(a=>a.className===current.className).map(a=><div className="item" key={a.id}><b>{a.title}</b><span>{a.subject} · prazo {a.dueDate||"não definido"}</span><p>{a.description}</p></div>)}{assignments.filter(a=>a.className===current.className).length===0&&<p className="muted">Nenhuma tarefa para sua turma.</p>}</section>}
+ {view==="exams"&&isTeacher&&<><section className="card"><span className="badge">PROFESSOR</span><h1>Nova prova</h1><form onSubmit={addExam}><div className="grid"><label>Título<input value={examForm.title} onChange={e=>setExamForm({...examForm,title:e.target.value})} required/></label><label>Disciplina<input value={examForm.subject} onChange={e=>setExamForm({...examForm,subject:e.target.value})} required/></label><label>Data<input type="date" value={examForm.date} onChange={e=>setExamForm({...examForm,date:e.target.value})} required/></label><label>Turma<input value={examForm.className} onChange={e=>setExamForm({...examForm,className:e.target.value})} required/></label><label>Valor máximo<input type="number" min="1" value={examForm.maxScore} onChange={e=>setExamForm({...examForm,maxScore:e.target.value})}/></label></div><button>Cadastrar prova</button></form>{msg&&<p className="success">{msg}</p>}</section><section className="card"><h2>Minhas provas</h2>{teacherExams.map(x=><div className="item" key={x.id}><b>{x.title}</b><span>{x.subject} · {x.className} · {x.date} · máximo {x.maxScore}</span></div>)}</section></>}
+ {view==="exams"&&isStudent&&<section className="card"><span className="badge">ALUNO</span><h1>Minhas provas</h1>{exams.filter(x=>x.className===current.className).map(x=><div className="item" key={x.id}><b>{x.title}</b><span>{x.subject} · {x.date} · máximo {x.maxScore}</span></div>)}{exams.filter(x=>x.className===current.className).length===0&&<p className="muted">Nenhuma prova para sua turma.</p>}</section>}
+ {view==="grades"&&isTeacher&&<><section className="card"><span className="badge">LANÇAMENTO DE NOTAS</span><h1>Lançar nota</h1><form onSubmit={addGrade}><div className="grid"><label>Prova<select value={gradeForm.examId} onChange={e=>setGradeForm({...gradeForm,examId:e.target.value})} required><option value="">Selecione</option>{teacherExams.map(x=><option key={x.id} value={x.id}>{x.title} · {x.className}</option>)}</select></label><label>Aluno<select value={gradeForm.studentId} onChange={e=>setGradeForm({...gradeForm,studentId:e.target.value})} required><option value="">Selecione</option>{students.map(s=><option key={s.id} value={s.id}>{s.name} · {s.className}</option>)}</select></label><label>Nota<input type="number" step="0.1" min="0" value={gradeForm.score} onChange={e=>setGradeForm({...gradeForm,score:e.target.value})} required/></label></div><button>Lançar nota</button></form>{msg&&<p className="success">{msg}</p>}</section><section className="card"><h2>Notas lançadas</h2>{grades.filter(g=>g.teacherId===current.id).map(g=>{const e=exams.find(x=>x.id===g.examId),s=users.find(x=>x.id===g.studentId);return <div className="item" key={g.id}><b>{s?.name}</b><span>{e?.title} · nota {g.score}/{e?.maxScore}</span></div>})}</section></>}
+ {view==="grades"&&isStudent&&<section className="card"><span className="badge">BOLETIM</span><h1>Minhas notas</h1>{grades.filter(g=>g.studentId===current.id).map(g=>{const e=exams.find(x=>x.id===g.examId);return <div className="item" key={g.id}><b>{e?.subject||"Disciplina"}</b><span>{e?.title} · {g.score}/{e?.maxScore}</span></div>})}{grades.filter(g=>g.studentId===current.id).length===0&&<p className="muted">Nenhuma nota lançada ainda.</p>}</section>}
+ {view==="profile"&&<section className="card"><span className="badge">MEU PERFIL</span><h1>{current.name}</h1><div className="profileGrid"><div><span>Usuário</span><strong>@{current.username}</strong></div><div><span>Tipo</span><strong>{roleLabel}</strong></div><div><span>E-mail</span><strong>{current.email||"Não informado"}</strong></div><div><span>Turma</span><strong>{current.className||"Não se aplica"}</strong></div></div></section>}
+ </main></div>
 }
