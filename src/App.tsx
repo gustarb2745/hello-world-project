@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Role = "user" | "admin";
 type User = {
@@ -58,10 +58,10 @@ export default function App() {
   const currentUser = users.find((u) => u.id === session);
   const isAdmin = currentUser?.role === "admin";
 
-  function ensureAdmin() {
+  async function ensureAdmin() {
     if (users.some((u) => u.role === "admin")) return;
     // Conta administrativa apenas para demonstração local.
-    hash("admin123").then((passwordHash) => {
+    const passwordHash = await hash("admin123");
       const admin: User = {
         id: crypto.randomUUID(), name: "Administrador", username: "admin",
         email: "admin@local.test", birthDate: "", passwordHash,
