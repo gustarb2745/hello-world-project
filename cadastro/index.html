@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Cadastro de Usuários</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<main class="container">
+<section class="hero"><div><span class="badge">Sistema de usuários</span><h1>Cadastro de Usuários</h1><p>Cadastre, consulte e remova usuários.</p></div><div class="counter"><strong id="userCount">0</strong><span>usuários</span></div></section>
+<section class="card"><h2>Novo usuário</h2><form id="userForm" novalidate>
+<div class="grid">
+<label>Nome completo<input id="name" name="name" required maxlength="100"></label>
+<label>Nome de usuário<input id="username" name="username" required maxlength="30"></label>
+<label>E-mail<input id="email" name="email" type="email" required maxlength="150"></label>
+<label>Data de nascimento<input id="birthDate" name="birthDate" type="date"></label>
+<label>Senha<input id="password" name="password" type="password" required minlength="6"></label>
+<label>Confirmar senha<input id="passwordConfirm" name="passwordConfirm" type="password" required minlength="6"></label>
+</div>
+<p id="formMessage" class="message" role="alert"></p><button type="submit">Cadastrar usuário</button>
+</form></section>
+<section class="card"><div class="listHeader"><div><h2>Usuários cadastrados</h2><p class="muted">Os dados deste protótipo ficam neste navegador.</p></div><input id="search" class="search" placeholder="Pesquisar..." aria-label="Pesquisar usuários"></div>
+<div id="empty" class="empty">Nenhum usuário cadastrado.</div><div id="userList" class="userList"></div></section>
+</main><script src="./app.js" defer></script>
+</body></html>
